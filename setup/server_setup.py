@@ -42,7 +42,7 @@ def setup_base_files(opts):
         run_cmd("chown {0}:www-data {1}".format(opts.username, opts.map_dir))
     if not os.path.exists(opts.replay_dir):
         os.mkdir(opts.replay_dir)
-        run_cmd("chown {0}:{0} {1}".format(opts.username, opts.replay_dir))
+        run_cmd("chown {0}:www-data {1}".format(opts.username, opts.replay_dir))
         os.chmod(opts.replay_dir, 0775)
     if not os.path.exists(opts.log_dir):
         os.mkdir(opts.log_dir)
@@ -130,7 +130,8 @@ def setup_website(opts):
             database_user=opts.database_user,
             database_password=opts.database_password,
             database_name=opts.database_name,
-            reply_email=reply_email
+            reply_email=reply_email,
+            api_url=opts.website_hostname
             )
     with CD(website_root):
         if not os.path.exists("server_info.php"):
@@ -139,11 +140,9 @@ def setup_website(opts):
         if not os.path.exists("aichallenge.wiki"):
             run_cmd("git clone git://github.com/aichallenge/aichallenge.wiki.git")
             run_cmd("python setup.py")
-    if not os.path.exists(os.path.join(website_root, "starter_packages")):
-        os.mkdir(os.path.join(website_root, "starter_packages"))
-        with CD(os.path.join(opts.local_repo, "ants/dist/starter_bots")):
-            run_cmd("make")
-            run_cmd("make install")
+    with CD(os.path.join(opts.local_repo, "ants/dist/starter_bots")):
+        run_cmd("make")
+        run_cmd("make install")
     if not os.path.exists(os.path.join(website_root, "worker-src.tgz")):
         create_worker_archive.main(website_root)
     visualizer_path = os.path.join(opts.local_repo, "ants/visualizer")
@@ -171,8 +170,9 @@ def setup_website(opts):
         if os.path.exists(enabled_link):
             os.remove(enabled_link)
         os.symlink(site_config, enabled_link)
-        run_cmd("a2enmod rewrite") # FIXME: ubuntu specific
+        run_cmd("a2enmod rewrite")
         run_cmd("/etc/init.d/apache2 restart")
+    run_cmd("chown -R {0}:{0} {1}".format(opts.username, website_root))
 
 def interactive_options(options):
     print "Warning: This script is meant to be run as root and will make changes to the configuration of the machine it is run on."
@@ -297,4 +297,3 @@ if __name__ == "__main__":
         main(sys.argv)
     except KeyboardInterrupt:
         print('Setup Aborted')
-

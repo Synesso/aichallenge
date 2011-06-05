@@ -39,7 +39,7 @@ CREATE TABLE `game_player` (
   `submission_id` int(11) NOT NULL,
   `player_id` int(11) NOT NULL,
   `errors` varchar(1024) DEFAULT NULL,
-  `stderr` varchar(1024) DEFAULT NULL,
+  `status` varchar(255) DEFAULT NULL,
   `game_rank` int(11) NOT NULL,
   `game_score` int(11) NOT NULL,
   `sigma_before` float NULL,
@@ -61,7 +61,7 @@ CREATE TABLE `game_player_archive` (
   `player_id` int(11) NOT NULL,
   `valid` tinyint(1) NOT NULL,
   `errors` varchar(1024) DEFAULT NULL,
-  `stderr` varchar(1024) DEFAULT NULL,
+  `status` varchar(255) DEFAULT NULL,  
   `rank_before` int(11) NOT NULL,
   `sigma_before` float NOT NULL,
   `sigma_after` float NOT NULL,
@@ -84,6 +84,7 @@ CREATE TABLE `leaderboard` (
   `algorithm_name` varchar(64) DEFAULT NULL,
   `calculation_time` bigint(20) DEFAULT '0',
   `complete` tinyint(1) NOT NULL DEFAULT '0',
+  `last_game_id` int(11) NULL,
   PRIMARY KEY (`leaderboard_id`),
   KEY `timestamp` (`timestamp`)
 );
@@ -148,14 +149,19 @@ CREATE TABLE `ranking` (
   `submission_id` int(11) NOT NULL,
   `version` int(11) NOT NULL,
   `seq` int(11) NOT NULL,
-  `rank` int(11) NOT NULL,
+  `rank` int(11) NULL,
   `rank_change` int(11) NULL,
+  `mu` float NOT NULL,
+  `mu_change` float NULL,
+  `sigma` float NOT NULL,
+  `sigma_change` float NULL,
   `skill` float NOT NULL,
   `skill_change` float NULL,
   `latest` tinyint(1) NOT NULL,
   `age` time NOT NULL,
   KEY `submission_id` (`submission_id`),
-  KEY `leaderboard_id` (`leaderboard_id`,`submission_id`,`rank`)
+  KEY `leaderboard_id` (`leaderboard_id`,`submission_id`,`rank`),
+  KEY `leaderboard_user_id` (`leaderboard_id`,`user_id`)
 );
 
 DROP TABLE IF EXISTS `ranking_archive`;
@@ -167,6 +173,10 @@ CREATE TABLE `ranking_archive` (
   `seq` int(11) NOT NULL,
   `rank` int(11) NOT NULL,
   `rank_change` int(11) NULL,
+  `mu` float NOT NULL,
+  `mu_change` float NULL,
+  `sigma` float NOT NULL,
+  `sigma_change` float NULL,
   `skill` float NOT NULL,
   `skill_change` float NULL,
   `latest` tinyint(4) NOT NULL,
@@ -195,7 +205,7 @@ CREATE TABLE `submission` (
   `errors` varchar(4096) DEFAULT NULL,
   `language_id` int(11) NOT NULL,
   `last_game_timestamp` datetime DEFAULT NULL,
-  `latest` tinyint(1) NOT NULL DEFAULT '1',
+  `latest` tinyint(1) NOT NULL DEFAULT '0',
   `sigma` float NOT NULL DEFAULT '16.6667',
   `mu` float NOT NULL DEFAULT '50',
   `worker_id` int(11) DEFAULT NULL,

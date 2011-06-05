@@ -8,16 +8,17 @@ function Config(preset) {
 	// override
 	if (preset) for (var key in preset) {
 		this[key] = preset[key];
-	}	
+	}
 }
 Config.prototype['fullscreen'] = false;
-Config.prototype['label'] = false;
+Config.prototype['label'] = 0;
 Config.prototype['graphics'] = false;
 Config.prototype['zoom'] = 1;
 Config.prototype['duration'] = 100;
 Config.prototype['speedSlowest'] = 2;
 Config.prototype['speedFastest'] = 5;
 Config.prototype['speedFactor'] = 0;
+Config.prototype['cpu'] = 0.5;
 /**
  * checks if local storage is available
  */
@@ -35,7 +36,7 @@ Config.prototype.hasLocalStorage = function() {
 Config.prototype.save = function() {
 	if (this.hasLocalStorage() === true) {
 		for (var key in this) {
-			if (this[key] === undefined) {
+			if (this[key] === undefined || this[key] === Config.prototype[key]) {
 				delete window.localStorage['visualizer.' + key];
 			} else if (this[key] === null) {
 				window.localStorage['visualizer.' + key] = "null";

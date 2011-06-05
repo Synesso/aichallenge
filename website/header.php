@@ -1,4 +1,5 @@
 <?php require_once('session.php'); ?>
+<!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml"> 
     <head> 
         <title>Google AI Challenge</title> 
@@ -7,7 +8,7 @@
         
         <!-- Global Tags --> 
         <meta http-equiv="Content-Type" content="text/html; charset=utf-8" /> 
-        <link rel="shortcut icon" href="images/favicon.png" />
+        <link rel="shortcut icon" href="favicon.ico" />
  
         <!-- CSS --> 
         <link href="css/reset.css" rel="stylesheet" type="text/css" /> 
@@ -32,7 +33,7 @@
                 <div class="left">
                     <div id="login">
                         <?php if (logged_in_with_valid_credentials()) { ?>
-                            <a href="profile.php?user_id=<?php echo current_user_id(); ?>">
+                            <a href="profile.php?user=<?php echo current_user_id(); ?>">
                             My Profile: <span class="large"><?php echo htmlspecialchars(current_username()); ?></span>
                             </a> |
                             <a href="logout.php">Sign Out</a>

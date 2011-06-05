@@ -18,7 +18,7 @@ TEMPLATE_DIR = os.path.dirname(os.path.abspath(__file__))
 def install_required_packages():
     """ This installs the packages that are required to run the worker scripts
     """
-    pkg_list = ["curl", "unzip"]
+    pkg_list = ["curl", "unzip", "python-software-properties"]
     install_apt_packages(pkg_list)
 
 def install_utility_packages():
@@ -30,7 +30,7 @@ def install_utility_packages():
 def install_basic_languages():
     """ Install base set of submission languages,
         currently C, C++, Java and Python """
-    pkg_list = ["gcc", "g++", "openjdk-6-jdk", "python-dev"]
+    pkg_list = ["gcc", "g++", "openjdk-6-jdk", "python-dev", "python3-dev"]
     install_apt_packages(pkg_list)
 
 def install_extra_packaged_languages():
@@ -45,40 +45,32 @@ def install_extra_packaged_languages():
         os.symlink("/usr/bin/ruby1.9.1", "/usr/bin/ruby")
 
 def install_golang():
-    """ Install golang from a mercurial release """
-    RELEASE_TAG = "release.r56"
-    if os.path.exists("/usr/local/bin/godoc"):
-        return
-    pkg_list = ["bison", "ed", "gawk", "libc6-dev", "make",
-            "python-setuptools", "build-essential", "mercurial"]
-    install_apt_packages(pkg_list)
-    try:
-        os.makedirs("/usr/local/src")
-    except OSError:
-        pass
-    with CD("/usr/local/src"):
-        run_cmd("hg clone -r %s https://go.googlecode.com/hg/ go"
-            % (RELEASE_TAG,))
-    append_line("/root/.bashrc", "export GOROOT=/usr/local/src/go")
-    append_line("/root/.bashrc", "export GOBIN=/usr/local/bin")
-    with CD("/usr/local/src/go/src"):
-        run_cmd("export GOBIN=/usr/local/bin; ./all.bash")
+    """ Install golang """
+    run_cmd("add-apt-repository ppa:gophers/go")
+    run_cmd("apt-get update")
+    install_apt_packages(['golang'])
 
 def install_nodejs():
     """ Install node.js """
-    if os.path.exists("/usr/local/bin/node"):
+    run_cmd("add-apt-repository ppa:jerome-etienne/neoip")
+    run_cmd("apt-get update")
+    install_apt_packages(['nodejs'])
+
+def install_coffeescript():
+    """ Install coffeescript """
+    if os.path.exists("/usr/local/bin/coffee"):
         return
-    install_apt_packages("make")
-    try:
-        os.makedirs("/usr/local/src/nodejs")
-    except OSError:
-        pass
-    with CD("/usr/local/src/nodejs"):
-        run_cmd("curl 'http://nodejs.org/dist/node-v0.4.1.tar.gz' | tar -xz")
-    with CD("/usr/local/src/nodejs/node-v0.4.1"):
-        run_cmd("./configure")
-        run_cmd("make")
-        run_cmd("make install")
+    run_cmd("curl http://npmjs.org/install.sh | clean=no sh")
+    run_cmd("npm install -g coffee-script")
+
+def install_clojure():
+    """ Install the Clojure language """
+    if os.path.exists("/usr/share/java/clojure.jar"):
+        return
+    with CD("/root"):
+        run_cmd("curl 'http://cloud.github.com/downloads/clojure/clojure/clojure-1.2.0.zip' > clojure-1.2.0.zip")
+        run_cmd("unzip clojure-1.2.0.zip")
+        run_cmd("cp clojure-1.2.0/clojure.jar /usr/share/java")
 
 def install_groovy():
     """ Install the Groovy language """
@@ -93,8 +85,8 @@ def install_scala():
     if os.path.exists("/usr/bin/scala"):
         return
     with CD("/root"):
-        run_cmd("curl 'http://www.scala-lang.org/downloads/distrib/files/scala-2.8.1.final.tgz' | tar xz")
-        os.rename("scala-2.8.1.final", "/usr/share/scala")
+        run_cmd("curl 'http://www.scala-lang.org/downloads/distrib/files/scala-2.9.0.1.tgz' | tar xz")
+        os.rename("scala-2.9.0.1", "/usr/share/scala")
         os.symlink("/usr/share/scala/bin/scala", "/usr/bin/scala")
         os.symlink("/usr/share/scala/bin/scalac", "/usr/bin/scalac")
 
@@ -112,6 +104,8 @@ def install_all_languages():
     install_extra_packaged_languages()
     install_golang()
     install_nodejs()
+    install_coffeescript()
+    install_clojure()
     install_groovy()
     install_scala()
     install_dmd()
@@ -128,6 +122,9 @@ def setup_contest_files(options):
     if not os.path.exists(map_dir):
         os.mkdir(map_dir)
         run_cmd("chown {0}: {1}".format(options.username, map_dir))
+    if not os.path.exists(options.log_dir):
+        os.mkdir(options.log_dir)
+        run_cmd("chown {0}: {1}".format(options.username, options.log_dir))
     worker_dir = os.path.join(contest_root, local_repo, "worker")
     si_filename = os.path.join(TEMPLATE_DIR, "worker_server_info.py.template")
     with open(si_filename, 'r') as si_file:
@@ -159,6 +156,8 @@ def setup_base_chroot(options):
         run_cmd("cp chroot_configs/sources.list %s/etc/apt/"
                 % (base_chroot_dir,))
         run_cmd("cp -r chroot_configs/ai-jail /etc/schroot/ai-jail")
+    deb_archives = "/var/cache/apt/archives/"
+    run_cmd("cp {0}*.deb {1}{0}".format(deb_archives, base_chroot_dir))
     run_cmd("schroot -c aic-base -- /bin/sh -c \"DEBIANFRONTEND=noninteractive;\
             apt-get update; apt-get upgrade -y\"")
     run_cmd("schroot -c aic-base -- apt-get install -y python")
@@ -309,7 +308,7 @@ def get_options(argv):
         "log_dir": log_dir,
         "local_repo": top_level,
         "create_jails": True,
-        "api_url":  '.'.join(getfqdn().split('.')[1:]),
+        "api_url":  "http://"+ '.'.join(getfqdn().split('.')[1:]) +"/",
         "api_key": "",
         "install_cronjob": False,
         "run_worker": False,
@@ -382,12 +381,12 @@ def main(argv=["worker_setup.py"]):
     start_script = os.path.join(opts.root_dir, opts.local_repo,
             "worker/start_worker.sh")
     if opts.install_cronjob:
-        cron_file = "/etc/cron.d/" + opts.api_url
+        cron_file = "/etc/cron.d/ai-contest"
         if not file_contains(cron_file, start_script):
-            append_line(cron_file, "@reboot root %s" % (start_script,))
+            append_line(cron_file, "@reboot %s %s"
+                    % (opts.username, start_script,))
     if opts.run_worker:
-        run_cmd(start_script)
+        run_cmd("sudo -u %s %s" % (opts.username, start_script))
 
 if __name__ == "__main__":
     main(sys.argv)
-

@@ -12,7 +12,7 @@ $compiledata = json_decode($json_string);
 
 $lang_result = contest_query("select_submission_language_id",
                              $compiledata->language);
-if ($lang_result) {
+if ($lang_result and mysql_num_rows($lang_result) > 0) {
     $row = mysql_fetch_assoc($lang_result);
     $lang_id = $row["language_id"];
 } else {
@@ -28,6 +28,11 @@ if ($compiledata->status_id == 40) {
                       $worker["worker_id"],
                       $compiledata->submission_id)) {
             echo json_encode(array( "hash" => $json_hash ));
+            if (!contest_query("update_submission_latest",
+                              $compiledata->submission_id,
+                              $compiledata->submission_id)) {
+                api_log(sprintf("Error updating latest flag: %s", mysql_error()));
+            };
     } else {
             api_log(sprintf("Error updating successful compile: %s", mysql_error()));
     }

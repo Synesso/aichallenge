@@ -4,22 +4,22 @@ html {
 }
 
 body {
-    background: #68e;
-    filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#6688ee', endColorstr='#2233ff', GradientType=0); /* for IE */
-    background: -webkit-gradient(linear, left top, 0% 100%, from(#68e), to(#23f));
-    background: -moz-linear-gradient(top,  #68e,  #23f);
-    background: -o-linear-gradient(#68e,#23f);
+    background: #603814;
+    filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#603814', endColorstr='#300400', GradientType=0); /* for IE */
+    background: -webkit-gradient(linear, left top, 0% 100%, from(#603814), to(#300400));
+    background: -moz-linear-gradient(top,  #603814,  #300400);
+    background: -o-linear-gradient(#603814,#300400);
     background-attachment: fixed;
 }
 
 #wrapper {
     position: relative;
-    
+
     margin: 10px auto;
     width: 960px;
-    
+
     background: #fff;
-    
+
     -moz-box-shadow: 0px 0px 40px rgba(0, 0, 0, 0.5);
     -webkit-box-shadow: 0px 0px 40px rgba(0, 0, 0, 0.5);
     box-shadow: 0px 0px 40px rgba(0, 0, 0, 0.5);
@@ -63,7 +63,7 @@ body {
 
 #header .left, #footer {
     background: #050;
-    filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#090', endColorstr='#050', GradientType=1);
+    filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#009900', endColorstr='#005500', GradientType=1);
     background: -webkit-gradient(linear, 0% 0%, 45% 0%, from(#090), to(#050));
     background: -moz-linear-gradient(left, #090, #050 45%);
     background: -o-linear-gradient(left,#090,#050 45%);
@@ -81,7 +81,7 @@ body {
     position: absolute;
     right: 0px;
     z-index: 1;
-    
+
     text-align: left;
     text-shadow: #7a0 0px 0px 20px; /*Glow*/
 }
@@ -105,18 +105,19 @@ body {
     top: 0px;
 }
 
+/* IE matrix transform and CSS transform have different behaviour, this hack should do */
 #header #triangle {
     width: 6em;
     height: 6em;
     background: #050;
     position: absolute;
     float: left;
-    top: 66px;
-    left: -3em;
-    -webkit-transform: rotate(45deg); 
-    -moz-transform: rotate(45deg);  
-    filter: progid:DXImageTransform.Microsoft.BasicImage(rotation=5); /*for IE*/
-    -o-transform: rotate(45deg);
+    top: 51px;
+    left: -4.24264068711em;
+    filter: progid:DXImageTransform.Microsoft.Matrix(SizingMethod='auto expand', M11=0.707106781, M12=-0.707106781, M21=0.707106781, M22=0.707106781);
+    -webkit-transform: translate(1.24264068711em, 15px) rotate(45deg);
+    -moz-transform: translate(1.24264068711em, 15px) rotate(45deg);
+    -o-transform: translate(1.24264068711em, 15px) rotate(45deg);
 }
 
 #login {
@@ -135,7 +136,7 @@ body {
 #content {
     background: #fff;
     padding: 15px;
-    
+
     min-height: 630px;
 }
 
@@ -162,11 +163,15 @@ body {
     margin: 5px 10px;
 }
 #menu a {
-    color: #fff
+    color: #fff;
 }
 
 #footer {
     padding: 15px;
     color: #fff;
     text-shadow: #000 1px 1px 3px;
+}
+
+#footer a {
+	color: #fff;
 }

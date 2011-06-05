@@ -2,7 +2,7 @@
 include('header.php');
 include('mysql_login.php');
 
-$user_id = $_GET["user_id"];
+$user_id = $_GET["user"];
 if(!filter_var($user_id, FILTER_VALIDATE_INT)) {
     $user_id = NULL;
 }
@@ -19,6 +19,7 @@ if(!filter_var($user_id, FILTER_VALIDATE_INT)) {
 //if (!($cache->start($cacheID))) {
 include_once 'profile_submissions_widget.php';
 include_once 'profile_games_widget.php';
+require_once('game_list.php');
 
 // Fetch Rank Data
 $rankquery = <<<EOT
@@ -128,7 +129,7 @@ EOT;
 }
 echo <<<EOT
     <p><strong>Country:</strong>&nbsp;
-    <a href="country_profile.php?country_id=$country_id">$flag_filename
+    <a href="country_profile.php?country=$country_id">$flag_filename
       $country_name</a>
 EOT;
 if ($logged_in) {
@@ -160,7 +161,7 @@ EOT;
 echo <<<EOT
     <p>
     <strong>Affiliation:</strong>&nbsp;
-    <a href="organization_profile.php?org_id=$org_id">$org_name</a>
+    <a href="organization_profile.php?org=$org_id">$org_name</a>
 EOT;
 if ($logged_in) {
 echo <<<EOT
@@ -225,7 +226,7 @@ EOT;
     echo "<p><strong>Current Rank:</strong>&nbsp;$rank</p>";
 
     $query = "SELECT * FROM submission
-        WHERE user_id='$user_id' AND status = 40 and latest = 1";
+        WHERE user_id = '$user_id' AND status = 40 and latest = 1";
     $result = mysql_query($query);
     if ($row = mysql_fetch_assoc($result)) {
         $sub_id = $row['submission_id'];
@@ -245,10 +246,11 @@ EOT;
     }
 
     echo "<h3><span>Latest Games</span><div class=\"divider\" /></h3>";
-    echo getGamesTableString($user_id, true, 15, "profile_games.php?user_id=$user_id");
+    echo get_game_list_table(1, $user_id, NULL, NULL, TRUE, 'profile_games.php');
+    //echo getGamesTableString($user_id, true, 15, "profile_games.php?user=$user_id");
     echo "<p></p>";
     echo "<h3><span>Recent Submissions</span><div class=\"divider\" /></h3>";
-    echo getSubmissionTableString($user_id, true, 10, "profile_submissions.php?user_id=$user_id");
+    echo getSubmissionTableString($user_id, true, 10, "profile_submissions.php?user=$user_id");
 
 }
 //$cache->end();

@@ -7,7 +7,10 @@
             <div class="columns">
                 <div class="left">
                     <div id="footer">
-                        Website Design by Andrew Rossignol
+                        <a href="rankings.php">Rankings</a> |
+                        <a href="server_stats.php">Server Statistics</a> |
+                        <a href="credits.php">Credits</a> |
+                        <a href="rules.php">Rules</a>
                     </div>
                 </div>
                 <div class="right">

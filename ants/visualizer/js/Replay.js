@@ -126,8 +126,12 @@ DataType = {
 /**
  * @constructor
  */
-function Replay(replay) {
+function Replay(replay, debug) {
 	var i, k, scores;
+	/**
+	 * @private
+	 */
+	this.debug = debug;
 	// check for a replay from the pre-json era and convert it.
 	if (replay.search(/^\s*{/) === -1) {
 		replay = this.txtToJson(replay);
@@ -168,12 +172,12 @@ function Replay(replay) {
 	if (replay) {
 		var stack = [];
 		var keyEq = function(obj, key, val) {
-			if (obj[key] !== val) {
+			if (obj[key] !== val && !that.debug) {
 				throw new Error(stack.join('.') + '.' + key + ' should be ' + val + ', but was found to be ' + obj[key] + '!');
 			}
 		};
 		var keyRange = function(obj, key, min, max) {
-			if (!(obj[key] >= min && (obj[key] <= max || max === undefined))) {
+			if (!(obj[key] >= min && (obj[key] <= max || max === undefined)) && !that.debug) {
 				throw new Error(stack.join('.') + '.' + key + ' should be within [' + min + ' .. ' + max + '], but was found to be ' + obj[key] + '!');
 			}
 		};
@@ -214,7 +218,7 @@ function Replay(replay) {
 		var durationSetter = null;
 		var setReplayDuration = function(duration, fixed) {
 			if (durationSetter) {
-				if (!fixed && that.duration < duration || fixed && that.duration !== duration) {
+				if (!fixed && that.duration < duration || fixed && that.duration !== duration && !that.debug) {
 					throw new Error('Replay duration was previously set to ' + that.duration + ' by "' + durationSetter + '" and is now redefined to be ' + duration);
 				}
 			} else {
@@ -243,7 +247,7 @@ function Replay(replay) {
 		for (var r = 0; r < mapdata.length; r++) {
 			keyIsStr(mapdata, r, map['cols'], map['cols']);
 			var maprow = new String(mapdata[r]);
-			if ((i = maprow.search(regex)) !== -1) {
+			if ((i = maprow.search(regex)) !== -1 && !this.debug) {
 				throw new Error('Invalid character "' + maprow.charAt(i) + '" in map. Zero based row/col: ' + r + '/' + i)
 			}
 			this.walls[r] = new Array(maprow.length);
@@ -284,7 +288,7 @@ function Replay(replay) {
 				var lifespan = obj[4] - obj[3];
 				keyIsStr(obj, 6, lifespan - 1, lifespan);
 				setReplayDuration(obj[4] - 1, obj[6].length !== lifespan);
-				if ((i = obj[6].search(regex)) !== -1) {
+				if ((i = obj[6].search(regex)) !== -1 && !this.debug) {
 					throw new Error('Invalid character "' + obj[6].charAt(i) + '" in move orders at index ' + i + ' in the string "' + obj[6] + '"');
 				}
 			} else {
@@ -298,6 +302,9 @@ function Replay(replay) {
 		var scoreslist = replay['scores'];
 		for (i = 0; i < this.players; i++) {
 			setReplayDuration(scoreslist[i].length - 1, false);
+		}
+		if (replay['bonus']) {
+			keyIsArr(replay, 'bonus', this.players, this.players);
 		}
 		// prepare score and count lists
 		this.turns = new Array(this.duration + 1);
@@ -342,7 +349,7 @@ function Replay(replay) {
 	if (!(this.meta['playercolors'] instanceof Array)) {
 		this.meta['playercolors'] = new Array(this.players);
 	}
-	for (i = 0; i < this.meta['playernames'].length; i++) {
+	for (i = 0; i < this.players; i++) {
 		if (!this.meta['playernames'][i]) {
 			this.meta['playernames'][i] = 'player ' + (i + 1);
 		}
@@ -359,8 +366,8 @@ function Replay(replay) {
 	}
 }
 Replay.prototype.txtToJson = function(replay) {
-	var i, lit, tl, args, rows, cols, owner, row, col, isAnt, conv, end;
-	var orders, fixed, scores, result;
+	var i, c, lit, tl, args, rows, cols, owner, row, col, isAnt, conv, end;
+	var orders, fixed, scores, result, isReplay;
 	lit = new LineIterator(replay);
 	result = {
 		'revision': 2,
@@ -372,19 +379,22 @@ Replay.prototype.txtToJson = function(replay) {
 	try {
 		// version check
 		tl = lit.gimmeNext();
-		tl.kw('v').as([DataType.IDENT, DataType.POSINT]);
-		tl.expectEq(0, 'ants'); // game name
-		tl.expectEq(1, 1);      // file version
-		// players
-		tl = lit.gimmeNext();
-		tl.kw('players').as([DataType.POSINT]);
-		tl.expectLE(0, 26);     // player count <= 26
-		result['players'] = tl.params[0];
-		// parameters
-		tl = lit.gimmeNext();
+		isReplay = tl.keyword === 'v';
+		if (isReplay) {
+			tl.kw('v').as([DataType.IDENT, DataType.POSINT]);
+			tl.expectEq(0, 'ants'); // game name
+			tl.expectEq(1, 1);      // file version
+			// players
+			tl = lit.gimmeNext();
+			tl.kw('players').as([DataType.POSINT]);
+			tl.expectLE(0, 26);     // player count <= 26
+			result['players'] = tl.params[0];
+			// parameters
+			tl = lit.gimmeNext();
+		}
 		while (tl.keyword !== 'm') {
 			args = [DataType.STRING];
-			if (tl.keyword === 'viewradius2' || tl.keyword === 'rows' || tl.keyword === 'cols') {
+			if (tl.keyword === 'viewradius2' || tl.keyword === 'rows' || tl.keyword === 'cols' || tl.keyword === 'players') {
 				args[0] = DataType.UINT;
 			}
 			tl.as(args);
@@ -402,49 +412,70 @@ Replay.prototype.txtToJson = function(replay) {
 			tl.as([DataType.STRING]);
 			if (cols === undefined) {
 				cols = tl.params[0].length;
-			} else if (tl.params[0].length !== cols) {
+			} else if (tl.params[0].length !== cols && !this.debug) {
 				throw new Error('Map lines have different lenghts');
 			}
 			result['map']['data'].push(tl.params[0]);
-			rows++;
-			tl = lit.gimmeNext();
-		} while (tl.keyword === 'm');
-		// food / ant
-		while (tl.keyword === 'a') {
-			//     row            col            start          conversion
-			tl.as([DataType.UINT, DataType.UINT, DataType.UINT, DataType.UINT,
-					DataType.UINT, DataType.UINT, DataType.STRING], 3);
-			//  end            owner          orders            # optional
-			row = tl.params[0];
-			if (row >= this.rows) throw new Error('Row exceeds map width.');
-			col = tl.params[1];
-			if (col >= this.cols) throw new Error('Col exceeds map height.');
-			conv = tl.params[3];
-			end = tl.params[4];
-			if (end === undefined) end = conv;
-			owner = tl.params[5];
-			isAnt = owner !== undefined;
-			if (isAnt && owner >= this.players) {
-				throw new Error('Player index out of range.');
-			}
-			if (tl.params.length === 6) {
-				tl.params.push('');
-			}
-			orders = tl.params[6];
-			if (isAnt) {
-				fixed = orders.length !== end - conv;
-				if (fixed && orders.length + 1 !== end - conv) {
-					throw new Error('Number of orders does not match life span.');
+			if (!isReplay) {
+				// in a map file we want to extract starting positions
+				for (i = 0; i < cols; i++) {
+					c = tl.params[0].charAt(i);
+					if (c >= 'a' && c <= 'z') {
+						result['ants'].push([rows, i, 0, 0, 1, c.toUpperCase().charCodeAt(0) - 65, '-']);
+					} else if (c === '*') {
+						result['ants'].push([rows, i, 0, 0]);
+					}
 				}
 			}
-			result['ants'].push(tl.params);
-			tl = lit.gimmeNext();
-		}
-		// score
-		for (i = 0; i < result['players']; i++) {
-			scores = tl.kw('s').as([DataType.SCORES]).params[0];
-			result['scores'].push(scores);
-			if (i != result['players'] - 1) tl = lit.gimmeNext();
+			rows++;
+			if (isReplay || lit.moar()) {
+				tl = lit.gimmeNext();
+			} else {
+				break;
+			}
+		} while (tl.keyword === 'm');
+		// food / ant
+		if (isReplay) {
+			while (tl.keyword === 'a') {
+				//     row            col            start          conversion
+				tl.as([DataType.UINT, DataType.UINT, DataType.UINT, DataType.UINT,
+						DataType.UINT, DataType.UINT, DataType.STRING], 3);
+				//		end            owner          orders            # optional
+				row = tl.params[0];
+				if (row >= this.rows) throw new Error('Row exceeds map width.');
+				col = tl.params[1];
+				if (col >= this.cols) throw new Error('Col exceeds map height.');
+				conv = tl.params[3];
+				end = tl.params[4];
+				if (end === undefined) end = conv;
+				owner = tl.params[5];
+				isAnt = owner !== undefined;
+				if (isAnt && owner >= this.players) {
+					throw new Error('Player index out of range.');
+				}
+				if (tl.params.length === 6) {
+					tl.params.push('');
+				}
+				orders = tl.params[6];
+				if (isAnt) {
+					fixed = orders.length !== end - conv;
+					if (fixed && orders.length + 1 !== end - conv) {
+						throw new Error('Number of orders does not match life span.');
+					}
+				}
+				result['ants'].push(tl.params);
+				tl = lit.gimmeNext();
+			}
+			// score
+			for (i = 0; i < result['players']; i++) {
+				scores = tl.kw('s').as([DataType.SCORES]).params[0];
+				result['scores'].push(scores);
+				if (i != result['players'] - 1) tl = lit.gimmeNext();
+			}
+		} else {
+			for (i = 0; i < result['players']; i++) {
+				result['scores'].push([0]);
+			}
 		}
 		if (lit.moar()) {
 			tl = lit.gimmeNext();
