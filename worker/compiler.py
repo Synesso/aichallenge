@@ -48,7 +48,7 @@ import sys
 import time
 from optparse import OptionParser
 
-from sandbox import Sandbox
+from sandbox import get_sandbox
 
 try:
     from server_info import server_info
@@ -107,8 +107,8 @@ def _run_cmd(sandbox, cmd, timelimit):
     finally:
         sandbox.kill()
     if time.time() > timelimit:
-        errors.append("Compilation timed out with file %s"
-                % (filename,))
+        errors.append("Compilation timed out with command %s"
+                % (cmd,))
     err_line = sandbox.read_error()
     while err_line is not None:
         errors.append(err_line)
@@ -155,7 +155,7 @@ class ExternalCompiler(Compiler):
             files = safeglob_multi(globs)
 
         errored = False
-        box = Sandbox(bot_dir)
+        box = get_sandbox(bot_dir)
         try:
             if self.separate:
                 for filename in files:
@@ -189,7 +189,7 @@ class TargetCompiler(Compiler):
         with CD(bot_dir):
             sources = safeglob_multi(globs)
 
-        box = Sandbox(bot_dir)
+        box = get_sandbox(bot_dir)
         try:
             for source in sources:
                 head, ext = os.path.splitext(source)
@@ -224,10 +224,10 @@ comp_args = {
     "Groovy"    : [["groovyc"],
                              ["jar", "cfe", BOT + ".jar", BOT]],
     "Haskell" : [["ghc", "--make", BOT + ".hs", "-O", "-v0"]],
-    "Java"        : [["javac"],
+    "Java"        : [["javac", "-J-Xmx%sm" % (MEMORY_LIMIT)],
                              ["jar", "cfe", BOT + ".jar", BOT]],
     "Lisp"      : [['sbcl', '--dynamic-space-size', str(MEMORY_LIMIT), '--script', BOT + '.lisp']],
-    "OCaml"     : [["ocamlbuild", BOT + ".native"]],
+    "OCaml"     : [["ocamlbuild -lib unix", BOT + ".native"]],
     "Scala"     : [["scalac"]],
     }
 
@@ -322,7 +322,7 @@ languages = (
         [([""], ExternalCompiler(comp_args["Lisp"][0]))]
     ),
     Language("Lua", ".lua", "MyBot.lua",
-        "?",
+        "luajit-2.0.0-beta5 MyBot.lua",
         [],
         [(["*.lua"], ChmodCompiler("Lua"))]
     ),
@@ -357,7 +357,7 @@ languages = (
         [(["*.rb"], ChmodCompiler("Ruby"))]
     ),
     Language("Scala", ".scala", "MyBot.scala",
-        "?",
+        'JAVA_OPTS="-Xmx'+ str(MEMORY_LIMIT) +'m";scala -howtorun:object MyBot',
         ["*.scala, *.jar"],
         [(["*.scala"], ExternalCompiler(comp_args["Scala"][0]))]
     ),

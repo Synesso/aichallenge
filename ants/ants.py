@@ -1,12 +1,13 @@
 #!/usr/bin/env python
-from random import randrange, choice, shuffle
+from random import randrange, choice, shuffle, randint, seed
 from math import sqrt
 import os
-from collections import deque, defaultdict
+from collections import deque, defaultdict, OrderedDict
 from fractions import Fraction
 import operator
 import string
 from game import Game
+from sys import maxint
 
 ANTS = 0
 LAND = -1
@@ -37,7 +38,9 @@ class Ants(Game):
         self.viewradius = int(options["viewradius2"])
         self.attackradius = int(options["attackradius2"])
         self.spawnradius = int(options["spawnradius2"])
-        self.seed = options.get('seed')
+        self.engine_seed = options.get('engine_seed', randint(-maxint-1, maxint))
+        self.player_seed = options.get('player_seed', randint(-maxint-1, maxint))
+        seed(self.engine_seed)
         self.food_rate = options.get('food_rate', (2,8)) # total food
         if type(self.food_rate) in (list, tuple):
             self.food_rate = randrange(*self.food_rate)
@@ -51,13 +54,16 @@ class Ants(Game):
         if type(self.food_visible) in (list, tuple):
             self.food_visible = randrange(*self.food_visible)
         self.food_extra = Fraction(0,1)
+        
+        self.cutoff_percent = options.get('cutoff_percent', 0.90)
+        self.cutoff_turn = options.get('cutoff_turn', 100)
 
         self.do_attack = {
-            'power':   self.do_attack_power,
+            'focus':   self.do_attack_focus,
             'closest': self.do_attack_closest,
             'support': self.do_attack_support,
             'damage':  self.do_attack_damage
-        }.get(options.get('attack'), self.do_attack_damage)
+        }.get(options.get('attack'), self.do_attack_focus)
 
         self.do_food = {
             'none':      self.do_food_none,
@@ -81,7 +87,18 @@ class Ants(Game):
         # initalise scores
         self.score = [Fraction(0,1)]*self.num_players
         self.score_history = [[s] for s in self.score]
-
+        self.bonus = [0 for s in self.score]
+        
+        # used to cutoff games early
+        self.cutoff_bot = LAND # Can be ant owner, FOOD or LAND
+        self.cutoff_turns = 0        
+        # used to calculate the turn when the winner took the lead
+        self.winning_bot = None
+        self.winning_turn = 0
+        # used to calculate when the player rank last changed
+        self.ranking_bots = None
+        self.ranking_turn = 0
+        
         # initialise size
         self.height, self.width = map_data['size']
         self.land_area = self.height*self.width - len(map_data['water'])
@@ -155,7 +172,7 @@ class Ants(Game):
             if not line or line[0] == '#':
                 continue
 
-            key, value = line.split(' ')
+            key, value = line.split(' ', 1)
             if key == 'cols':
                 width = int(value)
             elif key == 'rows':
@@ -387,8 +404,8 @@ class Ants(Game):
 
         # also tell the player about any food that has been removed
         #   (only for food they have already seen)
-        for row, col in sorted(self.removed_food[player]):
-            visible_updates.append(['r',row,col])
+        #for row, col in sorted(self.removed_food[player]):
+        #    visible_updates.append(['r',row,col])
 
         visible_updates.append([]) # newline
         return '\n'.join(' '.join(map(str,s)) for s in visible_updates)
@@ -706,7 +723,12 @@ class Ants(Game):
             enemies = self.nearby_ants(ant.loc, self.attackradius, ant.owner)
             if enemies:
                 nearby_enemies[ant] = enemies
-                damage_per_enemy = Fraction(1, len(enemies))
+                strenth = 10 # dot dot dot
+                if ant.orders[-1] == '-':
+                    strenth = 10
+                else:
+                    strenth = 10
+                damage_per_enemy = Fraction(strenth, len(enemies)*10)
                 for enemy in enemies:
                     damage[enemy] += damage_per_enemy
 
@@ -750,12 +772,12 @@ class Ants(Game):
             for enemy in enemies:
                 self.score[enemy.owner] += Fraction(1, score_share)
 
-    def do_attack_power(self):
+    def do_attack_focus(self):
         """ Kill ants which are the most surrounded by enemies
 
-            For a given ant define: Power = 1/NumOpponents
+            For a given ant define: Focus = 1/NumOpponents
             An ant's Opponents are enemy ants which are within the attackradius.
-            Ant alive if its Power is greater than Power of any of his Opponents.
+            Ant alive if its Focus is greater than Focus of any of his Opponents.
             If an ant dies 1 point is shared equally between its Opponents.
         """
 
@@ -767,12 +789,12 @@ class Ants(Game):
         # determine which ants to kill
         ants_to_kill = []
         for ant in self.current_ants.values():
-            # determine this ants weakness (1/power)
+            # determine this ants weakness (1/focus)
             weakness = len(nearby_enemies[ant])
             # an ant with no enemies nearby can't be attacked
             if weakness == 0:
                 continue
-            # determine the most powerful nearby enemy
+            # determine the most focused nearby enemy
             min_enemy_weakness = min(len(nearby_enemies[enemy]) for enemy in nearby_enemies[ant])
             # ant dies if it is weak as or weaker than an enemy weakness
             if min_enemy_weakness <= weakness:
@@ -1095,12 +1117,14 @@ class Ants(Game):
             A game is over when there are no players remaining, or a single
               winner remaining.
         """
-        return self.remaining_players() <= 1
+        if self.remaining_players() <= 1:
+            return True
+        if self.cutoff_turns >= self.cutoff_turn:
+            return True
+        return False
 
     def kill_player(self, player):
         """ Used by engine to signal that a player is out of the game """
-        # give hold orders to all player ants by calling do_moves with no orders
-        self.do_moves(player, [])
         self.killed[player] = True
 
     def start_game(self):
@@ -1117,19 +1141,28 @@ class Ants(Game):
         players = [p for p in range(self.num_players) if self.is_alive(p)]
 
         # if there is exactly one player remaining they get food bonus
+        # if the game ends early there is no bonus
+        #    the bonus only exists to ensure a lone survivor the best chance at winning
+        #    simply removing the bonus is the best disincentive to not ending the game
+        #    games ending do to inactivity would not have the player rank changed by splitting the bonus
         if len(players) == 1:
             player = players[0]
-            # currently 1 food is spawned per turn per player
+            # the food bonus represents the maximum points a bot can get with perfect play
+            # remaining food and food to be spawned would be 1 point
+            #   either from collecting the food and spawning an ant
+            #   or killing an enemy ant that the food spawned into
+            # plus 1 point for killing all enemy ants (losses don't matter for points)
             food_bonus = (
                 (self.turns - self.turn) * # food that will spawn
-                (self.food_rate * self.num_players / self.food_turn)
+                Fraction(self.food_rate * self.num_players, self.food_turn)
                 + self.food_extra
                 + len(self.current_food) # food that hasn't been collected
-                + len(self.current_ants) # player AND enemy ants
+                # enemy ants (player ants already received point when spawned)
+                + len([ant for ant in self.current_ants.values() if ant.owner != player])
             )
             self.score[player] += food_bonus
-            # amend the score history instead of extending it
-            self.score_history[player][-1] += food_bonus
+            # separate bonus from score history
+            self.bonus[player] = food_bonus
 
     def start_turn(self):
         """ Called by engine at the start of the turn """
@@ -1167,6 +1200,36 @@ class Ants(Game):
         self.update_vision()
         self.update_revealed()
 
+        # calculate population counts for stopping games early
+        # FOOD can end the game as well, since no one is gathering it
+        pop_count = defaultdict(int)
+        for ant in self.current_ants.values():
+            pop_count[ant.owner] += 1
+        pop_count[FOOD] = len(self.current_food)
+        pop_total = sum(pop_count.values())
+        for owner, count in pop_count.items():
+            if count >= pop_total * self.cutoff_percent:
+                if self.cutoff_bot == owner:
+                    self.cutoff_turns += 1
+                else:
+                    self.cutoff_bot = owner
+                    self.cutoff_turns = 1
+                break
+        else:
+            self.cutoff_bot = LAND
+            self.cutoff_turns = 0
+        
+        scores = [int(score) for score in self.score]
+        ranking_bots = [sorted(set(scores), reverse=True).index(x) for x in scores]
+        if self.ranking_bots != ranking_bots:
+            self.ranking_turn = self.turn
+        self.ranking_bots = ranking_bots
+        
+        winning_bot = [p for p in range(len(scores)) if scores[p] == max(scores)]
+        if self.winning_bot != winning_bot:
+            self.winning_turn = self.turn
+        self.winning_bot = winning_bot
+        
     def get_state(self):
         """ Get all state changes
 
@@ -1192,9 +1255,12 @@ class Ants(Game):
         result.append(['viewradius2', self.viewradius])
         result.append(['attackradius2', self.attackradius])
         result.append(['spawnradius2', self.spawnradius])
-        if self.seed is not None:
-            result.append(['seed', self.seed])
+        result.append(['player_seed', self.player_seed])
+        # information hidden from players
         if player == None:
+            result.append(['food_rate', self.food_rate])
+            result.append(['food_turn', self.food_turn])
+            result.append(['food_start', self.food_start])
             for line in self.get_map_output():
                 result.append(['m',line])
         result.append([]) # newline
@@ -1256,11 +1322,21 @@ class Ants(Game):
 
             Used by engine to report stats
         """
-        ant_count = [0 for i in range(self.num_players)]
+        ant_count = [0 for i in range(self.num_players+1)]
         for loc, ant in self.current_ants.items():
             ant_count[ant.owner] += 1
-        return {'ant_count': ant_count}
-
+        stats = OrderedDict()
+        stats['ant_count'] = ant_count
+        stats['food'] = len(self.current_food)
+        stats['cutoff'] = 'Food' if self.cutoff_bot == FOOD else '-' if self.cutoff_bot == LAND else self.cutoff_bot
+        stats['c_turns'] = self.cutoff_turns
+        stats['winning'] = self.winning_bot
+        stats['w_turn'] = self.winning_turn
+        stats['ranking_bots'] = self.ranking_bots
+        stats['r_turn'] = self.ranking_turn
+        stats['score'] = map(int, self.score)
+        return stats
+    
     def get_replay(self):
         """ Return a summary of the entire game
 
@@ -1279,8 +1355,11 @@ class Ants(Game):
         replay['viewradius2'] = self.viewradius
         replay['attackradius2'] = self.attackradius
         replay['spawnradius2'] = self.spawnradius
-        if self.seed is not None:
-            replay['seed'] = self.seed
+        replay['engine_seed'] = self.engine_seed
+        replay['player_seed'] = self.player_seed
+        replay['food_rate'] = self.food_rate
+        replay['food_turn'] = self.food_turn
+        replay['food_start'] = self.food_start
 
         # map
         replay['map'] = {}
@@ -1312,7 +1391,12 @@ class Ants(Game):
             replay['ants'].append(ant_data)
 
         # scores
+        # score_history contains Fraction objects, so round down with int function
         replay['scores'] = [map(int, s) for s in self.score_history]
+        replay['bonus'] = map(int, self.bonus)
+        replay['winning_turn'] = self.winning_turn
+        replay['ranking_turn'] = self.ranking_turn
+        replay['cutoff'] = bool(self.remaining_players() > 1 and self.turns > self.turn)
 
         return replay
 

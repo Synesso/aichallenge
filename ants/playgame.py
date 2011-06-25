@@ -4,16 +4,51 @@ import traceback
 import sys
 import os
 import time
-from optparse import OptionParser
+from optparse import OptionParser, OptionGroup
 import random
 import cProfile
 import visualizer.visualize_locally
+import StringIO
+import json
 
 from ants import Ants
 
 # get engine from worker dir
 sys.path.append("../worker")
 from engine import run_game
+
+# make stderr red text
+try:
+    import colorama
+    colorama.init()
+    colorize = True
+    color_default = (colorama.Fore.RED)
+    color_reset = (colorama.Style.RESET_ALL)
+except:
+    colorize = False
+    color_default = None
+    color_reset = None
+
+class Colorize(object):
+    def __init__(self, file, color=color_default):
+        self.file = file
+        self.color = color
+        self.reset = color_reset
+    def write(self, data):
+        if self.color:
+            self.file.write(''.join(self.color))
+        self.file.write(data)
+        if self.reset:
+            self.file.write(''.join(self.reset))
+    def flush(self):
+        self.file.flush()
+    def close(self):
+        self.file.close()
+
+if colorize:
+    stderr = Colorize(sys.stderr)
+else:
+    stderr = sys.stderr
 
 class Comment(object):
     def __init__(self, file):
@@ -71,9 +106,12 @@ def main(argv):
     parser.add_option("-r", "--rounds", dest="rounds",
                       default=1, type="int",
                       help="Number of rounds to play")
-    parser.add_option("--seed", dest="seed",
+    parser.add_option("--player_seed", dest="player_seed",
                       default=None, type="int",
-                      help="Seed for the random number generator")
+                      help="Player seed for the random number generator")
+    parser.add_option("--engine_seed", dest="engine_seed",
+                      default=None, type="int",
+                      help="Engine seed for the random number generator")
     
     parser.add_option('--strict', dest='strict',
                       action='store_true', default=False,
@@ -95,21 +133,35 @@ def main(argv):
                       help='Player position for first bot specified')
 
     # ants specific game options
-    parser.add_option("--attack", dest="attack",
-                      default="damage",
-                      help="Attack method to use for engine. (closest, power, support, damage)")
-    parser.add_option("--food", dest="food",
-                      default="sections",
-                      help="Food spawning method. (none, random, sections, symmetric)")
-    parser.add_option("--viewradius2", dest="viewradius2",
-                      default=55, type="int",
-                      help="Vision radius of ants squared")
-    parser.add_option("--spawnradius2", dest="spawnradius2",
-                      default=1, type="int",
-                      help="Spawn radius of ants squared")
-    parser.add_option("--attackradius2", dest="attackradius2",
-                      default=4, type="int",
-                      help="Attack radius of ants squared")
+    game_group = OptionGroup(parser, "Game Options", "Options that affect the game mechanics for ants")
+    game_group.add_option("--attack", dest="attack",
+                          default="focus",
+                          help="Attack method to use for engine. (closest, focus, support, damage)")
+    game_group.add_option("--food", dest="food",
+                          default="symmetric",
+                          help="Food spawning method. (none, random, sections, symmetric)")
+    game_group.add_option("--viewradius2", dest="viewradius2",
+                          default=55, type="int",
+                          help="Vision radius of ants squared")
+    game_group.add_option("--spawnradius2", dest="spawnradius2",
+                          default=1, type="int",
+                          help="Spawn radius of ants squared")
+    game_group.add_option("--attackradius2", dest="attackradius2",
+                          default=5, type="int",
+                          help="Attack radius of ants squared")
+    game_group.add_option("--food_rate", dest="food_rate", nargs=2, type="int", default=(2,8),
+                          help="Numerator of food per turn per player rate")
+    game_group.add_option("--food_turn", dest="food_turn", nargs=2, type="int", default=(12,30),
+                          help="Denominator of food per turn per player rate")
+    game_group.add_option("--food_start", dest="food_start", nargs=2, type="int", default=(75,175),
+                          help="One over percentage of land area filled with food at start")
+    game_group.add_option("--food_visible", dest="food_visible", nargs=2, type="int", default=(1,3),
+                          help="Amount of food guaranteed to be visible to starting ants")
+    game_group.add_option("--cutoff_turn", dest="cutoff_turn", type="int", default=100,
+                          help="Number of turns cutoff percentage is maintained to end game early")
+    game_group.add_option("--cutoff_percent", dest="cutoff_percent", type="float", default=0.90,
+                          help="Number of turns cutoff percentage is maintained to end game early")
+    parser.add_option_group(game_group)
 
     # the log directory must be specified for any logging to occur, except:
     #    bot errors to stderr
@@ -118,40 +170,45 @@ def main(argv):
     # the log directory will contain
     #    the replay or stream file used by the visualizer, if requested
     #    the bot input/output/error logs, if requested    
-    parser.add_option("-g", "--game", dest="game_id", default=0, type='int',
-                      help="game id to start at when numbering log files")
-    parser.add_option("-l", "--log_dir", dest="log_dir", default=None,
-                      help="Directory to dump replay files to.")
-    parser.add_option('-R', '--log_replay', dest='log_replay',
-                       action='store_true', default=False),
-    parser.add_option('-S', '--log_stream', dest='log_stream',
-                       action='store_true', default=False),
-    parser.add_option("-I", "--log_input", dest="log_input",
-                       action="store_true", default=False,
-                       help="Log input streams sent to bots")
-    parser.add_option("-O", "--log_output", dest="log_output",
-                       action="store_true", default=False,
-                       help="Log output streams from bots")
-    parser.add_option("-E", "--log_error", dest="log_error",
-                       action="store_true", default=False,
-                       help="log error streams from bots")
-    parser.add_option('-e', '--log_stderr', dest='log_stderr',
-                       action='store_true', default=False,
-                       help='additionally log bot errors to stderr')
-    parser.add_option('-o', '--log_stdout', dest='log_stdout',
-                       action='store_true', default=False,
-                       help='additionally log replay/stream to stdout')
+    log_group = OptionGroup(parser, "Logging Options", "Options that control the logging")
+    log_group.add_option("-g", "--game", dest="game_id", default=0, type='int',
+                         help="game id to start at when numbering log files")
+    log_group.add_option("-l", "--log_dir", dest="log_dir", default=None,
+                         help="Directory to dump replay files to.")
+    log_group.add_option('-R', '--log_replay', dest='log_replay',
+                         action='store_true', default=False),
+    log_group.add_option('-S', '--log_stream', dest='log_stream',
+                         action='store_true', default=False),
+    log_group.add_option("-I", "--log_input", dest="log_input",
+                         action="store_true", default=False,
+                         help="Log input streams sent to bots")
+    log_group.add_option("-O", "--log_output", dest="log_output",
+                         action="store_true", default=False,
+                         help="Log output streams from bots")
+    log_group.add_option("-E", "--log_error", dest="log_error",
+                         action="store_true", default=False,
+                         help="log error streams from bots")
+    log_group.add_option('-e', '--log_stderr', dest='log_stderr',
+                         action='store_true', default=False,
+                         help='additionally log bot errors to stderr')
+    log_group.add_option('-o', '--log_stdout', dest='log_stdout',
+                         action='store_true', default=False,
+                         help='additionally log replay/stream to stdout')
     # verbose will not print bot input/output/errors
     # only info+debug will print bot error output
-    parser.add_option("-v", "--verbose", dest="verbose",
-                      action='store_true', default=False,
-                      help="Print out status as game goes.")
-    parser.add_option("--profile", dest="profile",
-                       action="store_true", default=False,
-                       help="Run under the python profiler")
+    log_group.add_option("-v", "--verbose", dest="verbose",
+                         action='store_true', default=False,
+                         help="Print out status as game goes.")
+    log_group.add_option("--profile", dest="profile",
+                         action="store_true", default=False,
+                         help="Run under the python profiler")
     parser.add_option("--nolaunch", dest="nolaunch",
                       action='store_true', default=False,
                       help="Prevent visualizer from launching")
+    log_group.add_option("--html", dest="html_file",
+                         default=None,
+                         help="Output file name for an html replay")
+    parser.add_option_group(log_group)
 
     (opts, args) = parser.parse_args(argv)
     if opts.map is None or not os.path.exists(opts.map):
@@ -164,7 +221,7 @@ def main(argv):
             if opts.log_dir:
                 prof_file = os.path.join(opts.log_dir, prof_file)
             # cProfile needs to be explitly told about out local and global context
-            print("Running profile and outputting to {0}".format(prof_file,), file=sys.stderr)
+            print("Running profile and outputting to {0}".format(prof_file,), file=stderr)
             cProfile.runctx("run_rounds(opts,args)", globals(), locals(), prof_file)
         else:
             # only use psyco if we are not profiling
@@ -181,7 +238,26 @@ def main(argv):
         return -1
 
 def run_rounds(opts,args):
-    # this split of options is not needed, but left for documentation
+    def get_cmd_wd(cmd):
+        ''' get the proper working directory from a command line '''
+        new_cmd = []
+        wd = None
+        for i, part in enumerate(reversed(cmd.split())):
+            if wd == None and os.path.exists(part):
+                wd = os.path.split(os.path.realpath(part))[0]
+                if i == 0:
+                    new_cmd.insert(0, os.path.join(".", os.path.basename(part)))
+                else:
+                    new_cmd.insert(0, os.path.basename(part))
+            else:
+                new_cmd.insert(0, part)
+        return wd, ' '.join(new_cmd)
+    def get_cmd_name(cmd):
+        ''' get the name of a bot from the command line '''
+        for i, part in enumerate(reversed(cmd.split())):
+            if os.path.exists(part):
+                return os.path.basename(part)
+# this split of options is not needed, but left for documentation
     game_options = {
         "map": opts.map,
         "attack": opts.attack,
@@ -192,7 +268,16 @@ def run_rounds(opts,args):
         "loadtime": opts.loadtime,
         "turntime": opts.turntime,
         "turns": opts.turns,
-        "seed": opts.seed }
+        "food_rate": opts.food_rate,
+        "food_turn": opts.food_turn,
+        "food_start": opts.food_start,
+        "food_visible": opts.food_visible,
+        "cutoff_turn": opts.cutoff_turn,
+        "cutoff_percent": opts.cutoff_percent }
+    if opts.player_seed != None:
+        game_options['player_seed'] = opts.player_seed
+    if opts.engine_seed != None:
+        game_options['engine_seed'] = opts.engine_seed
     engine_options = {
         "loadtime": opts.loadtime,
         "turntime": opts.turntime,
@@ -208,28 +293,15 @@ def run_rounds(opts,args):
         "capture_errors": opts.capture_errors,
         "secure_jail": opts.secure_jail,
         "end_wait": opts.end_wait }
-    random.seed(opts.seed)
     for round in range(opts.rounds):
         # initialize game
         game_id = round + opts.game_id
         with open(opts.map, 'r') as map_file:
             game_options['map'] = map_file.read()
-            #opts['map'] = map_file.read()
+        if opts.engine_seed:
+            game_options['engine_seed'] = opts.engine_seed + round
         game = Ants(game_options)
         # initialize bots
-        def get_cmd_wd(cmd):
-            new_cmd = []
-            wd = None
-            for i, part in enumerate(cmd.split()):
-                if wd == None and os.path.exists(part):
-                    wd = os.path.split(os.path.realpath(part))[0]
-                    if i == 0:
-                        new_cmd.append(os.path.join(".", os.path.basename(part)))
-                    else:
-                        new_cmd.append(os.path.basename(part))
-                else:
-                    new_cmd.append(part)
-            return wd, ' '.join(new_cmd)
         bots = [get_cmd_wd(arg) for arg in args]
         bot_count = len(bots)
         # insure correct number of bots, or fill in remaining positions
@@ -240,10 +312,11 @@ def run_rounds(opts,args):
                     bots.append(bots[-1])
             else:
                 print("Incorrect number of bots for map.  Need {0}, got {1}"
-                      .format(game.num_players, len(bots)), file=sys.stderr)
+                      .format(game.num_players, len(bots)), file=stderr)
                 for arg in args:
-                    print("Bot Cmd: {0}".format(arg), file=sys.stderr)
+                    print("Bot Cmd: {0}".format(arg), file=stderr)
                 break
+        bot_count = len(bots)
         # move position of first bot specified
         if opts.position > 0 and opts.position <= len(bots):
             first_bot = bots[0]
@@ -293,19 +366,19 @@ def run_rounds(opts,args):
         if opts.log_error and opts.log_dir:
             if opts.log_stderr:
                 if opts.log_stdout:
-                    engine_options['error_logs'] = [Tee(Comment(sys.stderr), open(os.path.join(opts.log_dir, '{0}.bot{1}.error'.format(game_id, i)), 'w'))
+                    engine_options['error_logs'] = [Tee(Comment(stderr), open(os.path.join(opts.log_dir, '{0}.bot{1}.error'.format(game_id, i)), 'w'))
                                       for i in range(bot_count)]
                 else:
-                    engine_options['error_logs'] = [Tee(sys.stderr, open(os.path.join(opts.log_dir, '{0}.bot{1}.error'.format(game_id, i)), 'w'))
+                    engine_options['error_logs'] = [Tee(stderr, open(os.path.join(opts.log_dir, '{0}.bot{1}.error'.format(game_id, i)), 'w'))
                                       for i in range(bot_count)]
             else:
                 engine_options['error_logs'] = [open(os.path.join(opts.log_dir, '{0}.bot{1}.error'.format(game_id, i)), 'w')
                                   for i in range(bot_count)]
         elif opts.log_stderr:
             if opts.log_stdout:
-                engine_options['error_logs'] = [Comment(sys.stderr)] * bot_count
+                engine_options['error_logs'] = [Comment(stderr)] * bot_count
             else:
-                engine_options['error_logs'] = [sys.stderr] * bot_count
+                engine_options['error_logs'] = [stderr] * bot_count
         else:
             engine_options['error_logs'] = None
         
@@ -320,7 +393,21 @@ def run_rounds(opts,args):
             print('# playgame round {0}, game id {1}'.format(round, game_id))
 
         # intercept replay log so we can add player names
+        if opts.log_replay:
+            intcpt_replay_io = StringIO.StringIO()
+            real_replay_io = engine_options['replay_log']
+            engine_options['replay_log'] = intcpt_replay_io
+
         result = run_game(game, bots, engine_options)
+
+        # add player names, write to proper io, reset back to normal
+        if opts.log_replay:
+            replay_json = json.loads(intcpt_replay_io.getvalue())
+            replay_json['playernames'] = [get_cmd_name(arg) for arg in args]
+            real_replay_io.write(json.dumps(replay_json))
+            intcpt_replay_io.close()
+            engine_options['replay_log'] = real_replay_io
+
         # close file descriptors
         if engine_options['stream_log']:
             engine_options['stream_log'].close()
@@ -335,7 +422,16 @@ def run_rounds(opts,args):
         if engine_options['error_logs']:
             for error_log in engine_options['error_logs']:
                 error_log.close()
-        if not opts.nolaunch and replay_path:
-            visualizer.visualize_locally.launch(replay_path)
+        if replay_path:
+            if opts.nolaunch:
+                if opts.html_file:
+                    visualizer.visualize_locally.launch(replay_path, True, opts.html_file)
+            else:
+                if opts.html_file == None:
+                    visualizer.visualize_locally.launch(replay_path,
+                            generated_path="replay.{0}.html".format(game_id))
+                else:
+                    visualizer.visualize_locally.launch(replay_path,
+                            generated_path=opts.html_file)
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

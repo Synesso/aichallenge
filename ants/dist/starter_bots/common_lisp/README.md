@@ -6,6 +6,8 @@ specific to this Common Lisp (CL) starter package.
 
 ## Google AI Challenge Blurb
 
+*needs to be updated*
+
 The files in this package are part of a starter package from the
 Google AI Challenge. The Google AI Challenge is an Artificial
 Intelligence programming contest. You can get more information by
@@ -51,9 +53,7 @@ official tournament server.  Currently the official server is running
 
 ## Status
 
-This bot is still in development and has only been tested locally with
-data on standard input and with my own game engine (see the extensive
-starter package).  Nevertheless, patches and improvements are welcome.
+This bot is running as [lispstarterbot](http://aichallengebeta.hypertriangle.com/profile.php?user=89) on the beta server.
 
 
 ## Usage
@@ -70,6 +70,23 @@ Go to the `aichallenge/ants` directory and do:
 
 To upload a submission you only need to zip all the lisp-files: "`zip
 submission.zip *.lisp`".  ("`make submission-zip`" will do the same).
+
+### Submission Errors
+
+If SBCL does any output on standard error (stderr / \*error-output*)
+it will count as a compilation error to the server.  So even innocuous
+compiler notes or warnings will cause a compilation error.
+
+I've added two statements to MyBot.lisp that should muffle most of the
+warnings, but I'm not sure they will catch them all.  If really
+necessary redirect \*error-output* to \*standard-output* like so:
+`(setf *error-output* *standard-output*)` at the top of MyBot.lisp.
+
+**However**, this will also hide genuine compilation errors that would
+otherwise be shown on your profile page!  So if your bot still fails
+compiling on the server, your best best is resubmitting with the
+redirection disabled.
+
 
 ### Windows / MSYS Note
 
